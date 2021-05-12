@@ -7,6 +7,7 @@ interface DefaultPagination {
 }
 
 interface Hooks<Entity, Filter, Pagination> {
+  getById(id: string): Promise<Entity>;
   queryAllResource:
     | {
         getRows(): Promise<Entity[]>;
@@ -18,6 +19,7 @@ interface Hooks<Entity, Filter, Pagination> {
         getRows(filter: Filter, pagination: Pagination): Promise<Entity[]>;
       };
   createResource(input: any): Promise<Entity>;
+  updateById(id: string, req: NextApiRequest): Promise<Entity>;
 }
 
 type Fields<E, D> = {
@@ -34,13 +36,14 @@ interface Context<Entity, DerivedFields> {
   path: string[];
   req: NextApiRequest;
   formatEntity(entity: Entity): Entity & Partial<DerivedFields>;
+  itemId?: string;
 }
 
 export default function makeCollectionResource<
   Entity extends {},
   DerivedFields extends {} = {},
+  Pagination = DefaultPagination,
   Filter = unknown,
-  Pagination = unknown,
 >(options: Options<Entity, Filter, Pagination, DerivedFields>) {
   const { prefix, fields } = options;
 
@@ -63,8 +66,9 @@ export default function makeCollectionResource<
       if (ctx.req.method === "GET") return queryAllEntities(ctx, options);
     },
 
-    async individual(req, res) {
-      //
+    async individual(ctx: Context<Entity, DerivedFields>) {
+      if (ctx.req.method === "PUT") return updateSingleItem(ctx, options);
+      if (ctx.req.method === "GET") return querySingleItem(ctx, options);
     },
   };
 
@@ -80,7 +84,7 @@ export default function makeCollectionResource<
       }
 
       const isRoot = effectivePath.length === 0;
-      const ctx = {
+      const ctx: Context<Entity, DerivedFields> = {
         path: effectivePath,
         req,
         formatEntity,
@@ -91,6 +95,13 @@ export default function makeCollectionResource<
         res.json(result);
         return;
       }
+
+      ctx.itemId = effectivePath[0];
+      effectivePath.splice(0, 1);
+
+      const result = await APIs.individual(ctx);
+      res.json(result);
+      return;
     },
   };
 }
@@ -148,4 +159,30 @@ async function queryAllEntities<Entity, Filter, Pagination, DerivedFields>(
   return {
     data: (await queryAllResource.getRows()).map(ctx.formatEntity),
   };
+}
+
+async function querySingleItem<Entity, Filter, Pagination, DerivedFields>(
+  ctx: Context<Entity, DerivedFields>,
+  options: Options<Entity, Filter, Pagination, DerivedFields>,
+) {
+  if (!options.hooks.getById) {
+    throw new Error("not supported");
+  }
+
+  const getById = options.hooks.getById;
+  const item = await getById(ctx.itemId!);
+  return { data: ctx.formatEntity(item) };
+}
+
+async function updateSingleItem<Entity, Filter, Pagination, DerivedFields>(
+  ctx: Context<Entity, DerivedFields>,
+  options: Options<Entity, Filter, Pagination, DerivedFields>,
+) {
+  if (!options.hooks.updateById) {
+    throw new Error("not supported");
+  }
+
+  const updateById = options.hooks.updateById;
+  const item = await updateById(ctx.itemId!, ctx.req);
+  return { data: ctx.formatEntity(item) };
 }
