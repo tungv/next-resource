@@ -13,10 +13,13 @@ interface Hooks<Entity, Filter, Pagination> {
         getRows(): Promise<Entity[]>;
       }
     | {
-        getCount(filter: Filter): Promise<number | void>;
+        getCount(filter: Readonly<Filter>): Promise<number | void>;
         getPagination(req: NextApiRequest): Pagination;
         getFilter(req: NextApiRequest): Filter;
-        getRows(filter: Filter, pagination: Pagination): Promise<Entity[]>;
+        getRows(
+          filter: Readonly<Filter>,
+          pagination: Readonly<Pagination>,
+        ): Promise<Entity[]>;
       };
   createResource(input: any): Promise<Entity>;
   updateById(id: string, req: NextApiRequest): Promise<Entity>;
@@ -26,9 +29,14 @@ type Fields<E, D> = {
   [T in keyof D]: (entity: E) => D[T];
 };
 
-export interface Options<Entity, Filter, Pagination, DerivedFields> {
+export interface Options<
+  Entity extends {},
+  DerivedFields extends {} = {},
+  Pagination = DefaultPagination,
+  Filter = unknown,
+> {
   prefix: string[];
-  fields: Fields<Entity, DerivedFields>;
+  fields?: Fields<Entity, DerivedFields>;
   hooks: Partial<Hooks<Entity, Filter, Pagination>>;
 }
 
@@ -44,10 +52,12 @@ export default function makeCollectionResource<
   DerivedFields extends {} = {},
   Pagination = DefaultPagination,
   Filter = unknown,
->(options: Options<Entity, Filter, Pagination, DerivedFields>) {
+>(options: Options<Entity, DerivedFields, Pagination, Filter>) {
   const { prefix, fields } = options;
 
   function formatEntity(entity: Entity) {
+    if (!fields) return entity;
+
     const output: Partial<DerivedFields> = {};
 
     for (const fieldName in fields) {
@@ -106,9 +116,9 @@ export default function makeCollectionResource<
   };
 }
 
-async function createEntity<Entity, Filter, Pagination, DerivedFields>(
+async function createEntity<Entity, DerivedFields, Pagination, Filter>(
   ctx: Context<Entity, DerivedFields>,
-  options: Options<Entity, Filter, Pagination, DerivedFields>,
+  options: Options<Entity, DerivedFields, Pagination, Filter>,
 ) {
   if (!options.hooks.createResource) {
     throw new Error("not supported");
@@ -124,9 +134,9 @@ interface ListAllResponse<E, D, P> {
   };
 }
 
-async function queryAllEntities<Entity, Filter, Pagination, DerivedFields>(
+async function queryAllEntities<Entity, DerivedFields, Pagination, Filter>(
   ctx: Context<Entity, DerivedFields>,
-  options: Options<Entity, Filter, Pagination, DerivedFields>,
+  options: Options<Entity, DerivedFields, Pagination, Filter>,
 ) {
   if (!options.hooks.queryAllResource) {
     throw new Error("not supported");
@@ -161,9 +171,9 @@ async function queryAllEntities<Entity, Filter, Pagination, DerivedFields>(
   };
 }
 
-async function querySingleItem<Entity, Filter, Pagination, DerivedFields>(
+async function querySingleItem<Entity, DerivedFields, Pagination, Filter>(
   ctx: Context<Entity, DerivedFields>,
-  options: Options<Entity, Filter, Pagination, DerivedFields>,
+  options: Options<Entity, DerivedFields, Pagination, Filter>,
 ) {
   if (!options.hooks.getById) {
     throw new Error("not supported");
@@ -174,9 +184,9 @@ async function querySingleItem<Entity, Filter, Pagination, DerivedFields>(
   return { data: ctx.formatEntity(item) };
 }
 
-async function updateSingleItem<Entity, Filter, Pagination, DerivedFields>(
+async function updateSingleItem<Entity, DerivedFields, Pagination, Filter>(
   ctx: Context<Entity, DerivedFields>,
-  options: Options<Entity, Filter, Pagination, DerivedFields>,
+  options: Options<Entity, DerivedFields, Pagination, Filter>,
 ) {
   if (!options.hooks.updateById) {
     throw new Error("not supported");

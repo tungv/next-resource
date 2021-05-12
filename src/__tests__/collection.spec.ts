@@ -8,6 +8,16 @@ describe("collection", () => {
     age: number;
   }
 
+  interface Pagination {
+    pageSize: number;
+    pageNumber: number;
+    sort: "newest_first" | "oldest_first";
+  }
+
+  interface Filter {
+    ageLimit?: number;
+  }
+
   const sampleData: MyEntity[] = [
     { id: "1", name: "test 1", age: 10 },
     { id: "2", name: "test 2", age: 22 },
@@ -18,7 +28,7 @@ describe("collection", () => {
   ];
 
   it("GET /", async () => {
-    const options: Options<MyEntity, { ageLimit: number }> = {
+    const options: Options<MyEntity, never, Pagination, Filter> = {
       prefix: ["api", "my_items"],
       hooks: {
         queryAllResource: {
@@ -27,7 +37,7 @@ describe("collection", () => {
             return {
               pageSize: Number.parseInt(query.pageSize as string, 10),
               pageNumber: Number.parseInt(query.pageNumber as string, 10),
-              sort: (query.sort as string) || "newest_first",
+              sort: "newest_first",
             };
           },
           getFilter(req) {
@@ -36,22 +46,32 @@ describe("collection", () => {
             };
           },
           async getCount(filter) {
-            return sampleData.filter((row) => row.age >= filter.ageLimit)
-              .length;
+            const { ageLimit } = filter;
+            const cond =
+              typeof ageLimit === "number"
+                ? (row: MyEntity) => row.age >= ageLimit
+                : () => true;
+            return sampleData.filter(cond).length;
           },
           async getRows(filter, pagination) {
             const start = (pagination.pageNumber - 1) * pagination.pageSize;
             const end = start + pagination.pageSize;
+            const { ageLimit } = filter;
+
+            const cond =
+              typeof ageLimit === "number"
+                ? (row: MyEntity) => row.age >= ageLimit
+                : () => true;
+
             return sampleData
-              .filter((row) => row.age >= filter.ageLimit)
+              .filter(cond)
               .sort((a, z) => Number(z.id) - Number(a.id))
               .slice(start, end);
           },
         },
       },
     };
-    const collection =
-      makeCollectionResource<MyEntity, { ageLimit: number }>(options);
+    const collection = makeCollectionResource(options);
 
     const req = {} as NextApiRequest;
     const res = {} as NextApiResponse;
